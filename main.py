@@ -7,6 +7,7 @@ import argparse
 import sys
 import json
 import logging
+import waitress
 from sqlalchemy import (
     create_engine,
     Column,
@@ -34,7 +35,7 @@ class LWNFetchArticles(Base):
     __tablename__ = 'lwn_fetch_articles'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    timestamp = Column(DateTime, default=lambda: datetime.datetime.now(datetime.UTC))
 
     articles = relationship("LWNArticle", back_populates="fetch_info")
 
@@ -64,7 +65,7 @@ class LWNFetchFreeStatus(Base):
     __tablename__ = 'lwn_fetch_free_status'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    timestamp = Column(DateTime, default=datetime.datetime.now(datetime.UTC))
     article_id = Column(Integer, ForeignKey('lwn_articles.id'), nullable=False)
     status_code = Column(Integer, nullable=False)
 
@@ -192,7 +193,7 @@ def generate_atom_feed(articles, title="LWN Feed", link="https://lwn.net"):
     feed = ET.Element("feed", xmlns="http://www.w3.org/2005/Atom")
     ET.SubElement(feed, "title").text = title
     ET.SubElement(feed, "link", href=link, rel="self")
-    ET.SubElement(feed, "updated").text = datetime.datetime.utcnow().isoformat() + "Z"
+    ET.SubElement(feed, "updated").text = datetime.datetime.now(datetime.UTC).isoformat() + "Z"
 
     for article in articles:
         entry = ET.SubElement(feed, "entry")
@@ -209,7 +210,7 @@ def create_app(scraper):
     app = Flask(__name__)
     app.wsgi_app = ProxyFix(app.wsgi_app)
 
-    @app.route('/lwn.xml', methods=['GET'])
+    @app.route('/feeds/lwn.xml', methods=['GET'])
     def get_all_articles():
         """Serve all articles as an ATOM feed."""
         log.info("Serving all articles as an ATOM feed...")
@@ -219,7 +220,7 @@ def create_app(scraper):
         feed = generate_atom_feed(articles, title="LWN Articles")
         return Response(feed, mimetype="application/atom+xml")
 
-    @app.route('/lwn_free.xml', methods=['GET'])
+    @app.route('/feeds/lwn_free.xml', methods=['GET'])
     def get_free_articles():
         """Serve free articles as an ATOM feed."""
         log.info("Serving free articles as an ATOM feed...")
@@ -229,6 +230,19 @@ def create_app(scraper):
         ).all()
         scraper.Session.remove()
         feed = generate_atom_feed(articles, title="LWN Free Articles")
+        return Response(feed, mimetype="application/atom+xml")
+
+    @app.route('/feeds/lwn_weekly_free.xml', methods=['GET'])
+    def get_weekly_free_articles():
+        """Serve weekly free articles as an ATOM feed."""
+        log.info("Serving weekly free articles as an ATOM feed...")
+        session = scraper.Session
+        articles = session.query(LWNArticle).filter(
+            LWNArticle.free_status.any(LWNFetchFreeStatus.status_code == 200),
+            LWNArticle.headline.ilike("%Weekly Edition%"),
+        ).all()
+        scraper.Session.remove()
+        feed = generate_atom_feed(articles, title="LWN Weekly Free Articles")
         return Response(feed, mimetype="application/atom+xml")
 
     return app
@@ -277,12 +291,32 @@ def main():
             sys.exit(1)
 
     elif args.command == "serve":
-        app = create_app(scraper)
+        log.info("Starting the Waitress server...")
+
+        # Determine the bind option based on provided arguments
         if args.listen_address:
             host, port = args.listen_address.split(":")
-            app.run(host=host, port=int(port))
+            port = int(port)  # Convert port to integer
+            listen = (host, port)
         elif args.listen_socket:
-            app.run(unix_socket=args.listen_socket)
+            listen = args.listen_socket
+        else:
+            log.error("You must specify either --listen-address or --listen-socket.")
+            sys.exit(1)
+
+        app = create_app(scraper)
+
+        # Start Waitress server
+        try:
+            if isinstance(listen, tuple):
+                log.info(f"Serving on {listen[0]}:{listen[1]} using Waitress...")
+                waitress.serve(app, host=listen[0], port=listen[1])
+            else:
+                log.info(f"Serving on Unix socket {listen} using Waitress...")
+                waitress.serve(app, unix_socket=listen)
+        except Exception as e:
+            log.error(f"Failed to start Waitress server: {e}")
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()

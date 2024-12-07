@@ -24,4 +24,8 @@ options:
   --db DB               Path to SQLite database
   --log-level {DEBUG,INFO,WARN,ERROR}
                         Set the logging level
+
+$ nix run . -- --db 'sqlite:///./test.db' initialize
+$ nix run . -- --db 'sqlite:///./test.db' scrape
+$ nix run . -- --db 'sqlite:///./test.db' serve --listen-address :8000
 ```

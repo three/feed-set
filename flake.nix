@@ -14,6 +14,7 @@
           ps.requests
           ps.sqlalchemy
           ps.flask
+          ps.waitress
         ]);
 
         feeds_cli =
@@ -39,7 +40,7 @@
         apps = {
           default = {
             type = "app";
-            program = "${self.packages.${system}.default}/bin/python";
+            program = "${self.packages.${system}.default}/bin/feeds-cli";
           };
         };
       }
