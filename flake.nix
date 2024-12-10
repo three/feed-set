@@ -1,5 +1,5 @@
 {
-  description = "Simple Python Project";
+  description = "Generate various ATOM feeds";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
@@ -30,7 +30,7 @@
             };
       in {
         packages.default = pkgs.symlinkJoin {
-          name = "example-python-project";
+          name = "feed-set";
           paths = [
             python
             feeds_cli

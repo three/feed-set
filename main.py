@@ -313,7 +313,7 @@ def main():
                 waitress.serve(app, host=listen[0], port=listen[1])
             else:
                 log.info(f"Serving on Unix socket {listen} using Waitress...")
-                waitress.serve(app, unix_socket=listen)
+                waitress.serve(app, unix_socket=listen, unix_socket_perms="666")
         except Exception as e:
             log.error(f"Failed to start Waitress server: {e}")
             sys.exit(1)
